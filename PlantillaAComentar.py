@@ -20,7 +20,7 @@ from sklearn.neighbors import KNeighborsClassifier
 import pickle
 import csv
 
-from fs.time import datetime_to_epoch
+#from fs.time import datetime_to_epoch
 
 #valores por defecto#
 k=1
@@ -35,6 +35,8 @@ p='./'
 f="iris.csv"
 oFile="output"
 algoritmo=""
+hayQuePreprocesar = True
+balancear = False
 
 
 ########################################################
@@ -69,9 +71,10 @@ def calcularMetricasGuardar(clf, writer, parametros, nombre,test, testX, testY):
         if i>5:
             break
     
-    
+    #fscore = f1_score(testY, predictions, average='binary', pos_label=0) #clasificacion binaria
     #fscore = f1_score(testY, predictions, average=None)#clasificacion binaria
     fscore = f1_score(testY, predictions, average='weighted') #clasificacion multiclase
+                                                #micro
     print("Fscore: "+str(fscore))
 
     #PARA ESCRIBIR EN EL CSV
@@ -102,7 +105,7 @@ def calcularMetricasGuardar(clf, writer, parametros, nombre,test, testX, testY):
 if __name__ == '__main__':
     print('ARGV   :',sys.argv[1:])
     try:
-        options,remainder = getopt.getopt(sys.argv[1:],'o:k:d:p:K:D:W:f:h:s:S:',['output=','algoritmo=','k=','d=','K=','D=','W=','s=','S=','path=','file','help'])
+        options,remainder = getopt.getopt(sys.argv[1:],'o:k:d:p:K:D:W:f:h:s:S:',['output=','algoritmo=','k=','d=','K=','D=','W=','s=','S=','path=','file','help', 'sinPreproceso', 'balanceo'])
     except getopt.GetoptError as err:
         print('ERROR:',err)
         sys.exit(1)
@@ -131,14 +134,19 @@ if __name__ == '__main__':
             S = int(arg)
         elif opt ==  '--algoritmo':
             algoritmo = arg
+        elif opt ==  '--sinPreproceso':
+            hayQuePreprocesar = False
+        elif opt ==  '--balanceo':
+            balancear = True
         elif opt in ('-p', '--path'):
             p = arg
         elif opt in ('-f', '--file'):
             f = arg
         elif opt in ('-h','--help'):
-            print(''' -o outputFile \n --algoritmo algoritmo: KNN o DecisionTree \n -p inputFilePath \n -f inputFileName \n
+            print(''' -o outputFile \n --algoritmo algoritmo: KNN o DecisionTree \n -p inputFilePath \n -f inputFileName \n --sinPreproceso  no se realizará ningun tipo de preproceso (por default si) \n --balanceo   realizar balanceo (por default no) \n 
                        parametos KNN \n -k numVecinos \n -d valorP \n -K maxKvalue(opcional) \n -D maxP (opcional) \n -W weights(0:uniform,1:distance)  \n
-                       parametros DecisionTree \n -d max_Depth \n -D max_depth valor maximo (opcional) \n -s min_samples_split \n -S min_samples_split valor maximo(opcional) \n -k min_samples_leaf \n -K min_samples_leaf valor maximo (opcional)''')
+                       parametros DecisionTree \n -d max_Depth \n -D max_depth valor maximo (opcional) \n -s min_samples_split \n -S min_samples_split valor maximo(opcional) \n -k min_samples_leaf \n -K min_samples_leaf valor maximo (opcional) \n
+                       Example : python PlantillaAComentar.py --algoritmo="KNN" -k 5 -d 2 -f iris.csv -o irisResultados.csv --sinPreproceso --balanceo''')
             exit(1)
 
     if p == './':
@@ -197,15 +205,16 @@ if __name__ == '__main__':
     for feature in numerical_features:
         if ml_dataset[feature].dtype == np.dtype('M8[ns]') or (
                 hasattr(ml_dataset[feature].dtype, 'base') and ml_dataset[feature].dtype.base == np.dtype('M8[ns]')):
-            ml_dataset[feature] = datetime_to_epoch(ml_dataset[feature])
+            #ml_dataset[feature] = datetime_to_epoch(ml_dataset[feature])
+            print()
         else:
             ml_dataset[feature] = ml_dataset[feature].astype('double')
 
     
     #establecer cual va a ser la clase target y pasar de categorial a numerico
-    target_map = {'Iris-versicolor': 0, 'Iris-virginica': 1, 'Iris-setosa': 2}
-    ml_dataset['__target__'] = ml_dataset['Especie'].map(str).map(target_map) #pasar de categorial a numerico
-    del ml_dataset['Especie'] 
+    target_map = {1: 0, 2: 1, 3: 2}
+    ml_dataset['__target__'] = ml_dataset['Class'].map(int).map(target_map) #pasar de categorial a numerico
+    del ml_dataset['Class'] 
 
     keys = np.array(list(target_map.keys()))
 
@@ -228,58 +237,67 @@ if __name__ == '__main__':
     # MISSING VALUES: decidir si eliminar o imputar
     drop_rows_when_missing = []
 
-    impute_when_missing = [{'feature': 'Ancho de sepalo', 'impute_with': 'MEAN'}, 
-                           {'feature': 'Largo de sepalo', 'impute_with': 'MEAN'}, 
-                           {'feature': 'Largo de petalo', 'impute_with': 'MEAN'}, 
-                           {'feature': 'Ancho de petalo', 'impute_with': 'MEAN'}]
+    impute_when_missing = [{'feature': 'Area', 'impute_with': 'MEAN'}, 
+                           {'feature': 'Perimeter', 'impute_with': 'MEAN'}, 
+                           {'feature': 'Compactness', 'impute_with': 'MEAN'}, 
+                           {'feature': 'kernelLength', 'impute_with': 'MEAN'}, 
+                           {'feature': 'KernelWidth', 'impute_with': 'MEAN'}, 
+                           {'feature': 'AsymmetryCoeff', 'impute_with': 'MEAN'}, 
+                           {'feature': 'KernelGrooveLength', 'impute_with': 'MEAN'}]
+    
+    if hayQuePreprocesar:
+        # tratar los missing values a eliminar
+        for feature in drop_rows_when_missing:
+            train = train[train[feature].notnull()]
+            test = test[test[feature].notnull()]
+            print('Dropped missing records in %s' % feature)
 
-    # tratar los missing values a eliminar
-    for feature in drop_rows_when_missing:
-        train = train[train[feature].notnull()]
-        test = test[test[feature].notnull()]
-        print('Dropped missing records in %s' % feature)
-
-    # tratar los missing values a imputar
-    for feature in impute_when_missing:
-        if feature['impute_with'] == 'MEAN':
-            v = train[feature['feature']].mean()
-        elif feature['impute_with'] == 'MEDIAN':
-            v = train[feature['feature']].median()
-        elif feature['impute_with'] == 'CREATE_CATEGORY':
-            v = 'NULL_CATEGORY'
-        elif feature['impute_with'] == 'MODE':
-            v = train[feature['feature']].value_counts().index[0]
-        elif feature['impute_with'] == 'CONSTANT':
-            v = feature['value']
-        train[feature['feature']] = train[feature['feature']].fillna(v)
-        test[feature['feature']] = test[feature['feature']].fillna(v)
-        print('Imputed missing values in feature %s with value %s' % (feature['feature'], coerce_to_unicode(v)))
+        # tratar los missing values a imputar
+        for feature in impute_when_missing:
+            if feature['impute_with'] == 'MEAN':
+                v = train[feature['feature']].mean()
+            elif feature['impute_with'] == 'MEDIAN':
+                v = train[feature['feature']].median()
+            elif feature['impute_with'] == 'CREATE_CATEGORY':
+                v = 'NULL_CATEGORY'
+            elif feature['impute_with'] == 'MODE':
+                v = train[feature['feature']].value_counts().index[0]
+            elif feature['impute_with'] == 'CONSTANT':
+                v = feature['value']
+            train[feature['feature']] = train[feature['feature']].fillna(v)
+            test[feature['feature']] = test[feature['feature']].fillna(v)
+            print('Imputed missing values in feature %s with value %s' % (feature['feature'], coerce_to_unicode(v)))
 
     # REESCALADO
 
-    rescale_features = {'Ancho de sepalo': 'AVGSTD', 
-                        'Largo de sepalo': 'AVGSTD', 
-                        'Largo de petalo': 'AVGSTD', 
-                        'Ancho de petalo': 'AVGSTD'}
+    rescale_features = {'Area': 'AVGSTD',
+                        'Perimeter': 'AVGSTD',
+                        'Compactness': 'AVGSTD',
+                        'kernelLength': 'AVGSTD',
+                        'KernelWidth': 'AVGSTD',
+                        'AsymmetryCoeff': 'AVGSTD',
+                        'KernelGrooveLength': 'AVGSTD',
+                        }
     
-    # Escalar las features indicadas usando MINMAX o z-score
-    for (feature_name, rescale_method) in rescale_features.items():
-        if rescale_method == 'MINMAX':
-            _min = train[feature_name].min()
-            _max = train[feature_name].max()
-            scale = _max - _min
-            shift = _min
-        else:
-            shift = train[feature_name].mean()
-            scale = train[feature_name].std()
-        if scale == 0.:
-            del train[feature_name]
-            del test[feature_name]
-            print('Feature %s was dropped because it has no variance' % feature_name)
-        else:
-            print('Rescaled %s' % feature_name)
-            train[feature_name] = (train[feature_name] - shift).astype(np.float64) / scale
-            test[feature_name] = (test[feature_name] - shift).astype(np.float64) / scale
+    if hayQuePreprocesar:
+        # Escalar las features indicadas usando MINMAX o z-score
+        for (feature_name, rescale_method) in rescale_features.items():
+            if rescale_method == 'MINMAX':
+                _min = train[feature_name].min()
+                _max = train[feature_name].max()
+                scale = _max - _min
+                shift = _min
+            else:
+                shift = train[feature_name].mean()
+                scale = train[feature_name].std()
+            if scale == 0.:
+                del train[feature_name]
+                del test[feature_name]
+                print('Feature %s was dropped because it has no variance' % feature_name)
+            else:
+                print('Rescaled %s' % feature_name)
+                train[feature_name] = (train[feature_name] - shift).astype(np.float64) / scale
+                test[feature_name] = (test[feature_name] - shift).astype(np.float64) / scale
     
     ###########     DIVIDIR EL TEST EN 2 / DEV Y TEST (train 0.6 / dev 0.2 / test 0.2)      ###########
     #test, testSet = train_test_split(test,test_size=0.5,random_state=42,stratify=test[['__target__']]) #dividir
@@ -299,17 +317,19 @@ if __name__ == '__main__':
 
     # UNDERSAMPLING
 
-    # BINARIO
-    # RamdomUnderSampler reduce el desequilibrio de clases
-    # 0.5 -> la clase mayoritaria es el doble de la minoritaria
-    #undersample = RandomUnderSampler(sampling_strategy=0.5)#la mayoria va a estar representada el doble de veces
-    #trainXUnder,trainYUnder = undersample.fit_resample(trainX,trainY)
-    #testXUnder,testYUnder = undersample.fit_resample(testX, testY)
+    if balancear:
+        print("Balanceando datos")
+        # BINARIO
+        # RamdomUnderSampler reduce el desequilibrio de clases
+        # 0.5 -> la clase mayoritaria es el doble de la minoritaria
+        #undersample = RandomUnderSampler(sampling_strategy=0.5)#la mayoria va a estar representada el doble de veces
+        #trainXUnder,trainYUnder = undersample.fit_resample(trainX,trainY)
+        #testXUnder,testYUnder = undersample.fit_resample(testX, testY)
 
-    # MULTICLASS 
-    undersample = RandomUnderSampler(sampling_strategy = "not minority")
-    trainXUnder,trainYUnder = undersample.fit_resample(trainX,trainY)
-    testXUnder,testYUnder = undersample.fit_resample(testX, testY)
+        # MULTICLASS 
+        undersample = RandomUnderSampler(sampling_strategy = "not minority")
+        trainX,trainY = undersample.fit_resample(trainX,trainY)
+        testX,testY = undersample.fit_resample(testX, testY)
 
     
 
@@ -364,7 +384,7 @@ if __name__ == '__main__':
                         #iniciar clasificador ARBOL DE DECISION
                         clf = DecisionTreeClassifier(   random_state = 1337,
                                                         criterion = 'gini',
-                                                        splitter = 'best',
+                                                        splitter = 'best', #random
                                                         max_depth = l,
                                                         min_samples_leaf = j ,  
                                                         min_samples_split = mss )
@@ -388,7 +408,9 @@ if __name__ == '__main__':
 
 
     print("RESULTADOS:")
-    print(modelos)
-    print("\n modelo con mejor f-score: "+max(modelos, key = modelos.get))
     
+    print(modelos)
+    modeloMejorFscore = max(modelos, key = modelos.get)
+    print("\n modelo con mejor f-score: "+modeloMejorFscore)
+    print(modelos.get(modeloMejorFscore))
 print("bukatu da")
